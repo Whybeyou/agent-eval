@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: pytest + 示例跑批
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: install
+        run: python -m pip install -U pip pytest
+
+      - name: framework tests
+        run: pytest tests -q
+
+      - name: run toy example (offline, no key)
+        run: python examples/toy_agent/run_eval.py
+
+      - name: gate on expected pass rate
+        # 示例里刻意留了 2 个缺陷 → 通过率应该稳定在 80%，判定漂移就说明框架行为变了
+        run: |
+          python - <<'PY'
+          import json, sys
+          recs = [json.loads(l) for l in open("examples/toy_agent/results/toy_results.jsonl", encoding="utf-8") if l.strip()]
+          passed = sum(1 for r in recs if r["rule_pass"])
+          rate = 100.0 * passed / len(recs)
+          print(f"cases={len(recs)} passed={passed} rate={rate:.1f}%")
+          assert len(recs) == 10, "用例数量变了"
+          assert 70 <= rate <= 90, f"通过率漂移：{rate:.1f}%"
+          bad = [r["id"] for r in recs if not r["rule_pass"]]
+          print("badcases:", bad)
+          assert bad == ["TOY-B01", "TOY-N01"], bad
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toy-eval-results
+          path: examples/toy_agent/results/
+          if-no-files-found: warn
