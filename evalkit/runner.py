@@ -75,7 +75,7 @@ def run_suite(suite_dir, out_path=None, do_judge=False, only=None, verbose=True,
     for case in cases:
         if only_set and case["id"] not in only_set:
             continue
-        turns = case.get("turns") or [case.get("input", "")]
+        turns = case.get("turns") or [case.get("request") or case.get("input") or ""]
         t0 = time.time()
         try:
             res = sut.call(spec, turns, case, suite_dir)

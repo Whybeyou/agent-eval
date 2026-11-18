@@ -10,7 +10,7 @@ import glob
 import os
 import sys
 
-from . import dashboard, runner
+from . import dashboard, report_html, runner, web
 
 
 def load_env_file(path):
@@ -71,13 +71,43 @@ def cmd_run(args):
 
     md, rows = dashboard.write(args.runs, os.path.join(args.reports, "dashboard.md"))
     print("\n" + md)
+    html_path, info = web.build_html(args.runs, os.path.join(args.reports, "dashboard.html"))
     print(f"\n看板已写入 {os.path.join(args.reports, 'dashboard.md')}")
+    print(f"可视化看板：{html_path}（{info['systems']} 个系统 / {info['cases']} 条 / {info['rate']}%）")
 
     if args.strict:
         failed = [r["suite"] for r in rows if r["badcases"] or r["errors"]]
         if failed:
             print(f"\n::error::仍有 badcase/连接异常：{failed}")
             return 1
+    return 0
+
+
+def cmd_report_html(args):
+    """生成单系统「评测报告」页（编辑册页风，适合对外展示 / 归档）。"""
+    slugs = args.suite or [os.path.splitext(os.path.basename(p))[0]
+                           for p in sorted(glob.glob(os.path.join(args.runs, "*.jsonl")))]
+    for slug in slugs:
+        path, info = report_html.build(slug, args.runs, None if not args.out_dir
+                                       else os.path.join(args.out_dir, f"report_{slug}.html"))
+        print(f"{info['suite']}: {info['rate']}% ({info['cases']} 条, badcase {info['bad']}, "
+              f"一致率 {info['agreement']}) -> {path}")
+    return 0
+
+
+def cmd_serve(args):
+    """起 Web 控制台：前端 + 数据接口 + 跑批按钮。"""
+    import uvicorn
+    from .server import app
+    print(f"AgentEval 控制台 → http://{args.host}:{args.port}  (runs: {os.environ.get('EVALKIT_RUNS', 'runs')})")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
+def cmd_web(args):
+    path, info = web.build_html(args.runs, args.out)
+    print(f"{path}\n接入 {info['systems']} 个系统，{info['cases']} 条用例，"
+          f"规则通过率 {info['rate']}%，badcase {info['badcases']} 条")
     return 0
 
 
@@ -109,6 +139,22 @@ def main(argv=None):
     p_rep.add_argument("runs", nargs="?", default="runs")
     p_rep.add_argument("--out", default="reports/dashboard.md")
     p_rep.set_defaults(func=cmd_report)
+
+    p_rh = sub.add_parser("report-html", help="生成单系统评测报告页（可多选）")
+    p_rh.add_argument("--suite", action="append", default=[], help="slug，可重复；省略=全部")
+    p_rh.add_argument("--runs", default="runs")
+    p_rh.add_argument("--out-dir", default="reports")
+    p_rh.set_defaults(func=cmd_report_html)
+
+    p_serve = sub.add_parser("serve", help="起 Web 控制台（前端 + API）")
+    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--port", type=int, default=8030)
+    p_serve.set_defaults(func=cmd_serve)
+
+    p_web = sub.add_parser("web", help="生成自包含 HTML 看板（离线可开）")
+    p_web.add_argument("runs", nargs="?", default="runs")
+    p_web.add_argument("--out", default="reports/dashboard.html")
+    p_web.set_defaults(func=cmd_web)
 
     args = ap.parse_args(argv)
     return args.func(args) or 0

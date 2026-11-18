@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentEval · 评测控制台</title>
+<link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <div class="dot"></div>
+      <div class="brand-txt"><b>AgentEval</b><span>评测控制台</span></div>
+    </div>
+
+    <div class="rl">被测系统 <em id="rail-count"></em></div>
+    <nav id="rail" class="rail-list"></nav>
+
+    <div class="rail-filter">
+      <div class="rl">筛选</div>
+      <input id="q" class="input" placeholder="id / 分类 / 关键词">
+      <label class="switch"><input type="checkbox" id="only-fail"><span>只看失败</span></label>
+    </div>
+
+    <div class="rail-foot">
+      <div><span>数据源</span><b id="f-runs" class="ellip mono"></b></div>
+      <div><span>生成于</span><b id="f-gen" class="mono"></b></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="head">
+      <div>
+        <h1>评测总览</h1>
+        <p class="sub">规则机评 + LLM-Judge 双轨 · 风险维度一票否决 · 固定集回放</p>
+      </div>
+      <div class="head-actions">
+        <div class="runmeta mono" id="runmeta"></div>
+        <button class="btn ghost" id="btn-export">导出数据</button>
+        <button class="btn" id="btn-refresh">刷新</button>
+      </div>
+    </header>
+
+    <section class="kpis" id="kpis"></section>
+
+    <section class="panel">
+      <div class="ph"><h2>各系统通过率</h2><span>点系统名进入明细 · 环形 = 规则通过率</span></div>
+      <div class="bars" id="bars"></div>
+    </section>
+
+    <section class="panel">
+      <div class="ph">
+        <h2 id="table-title">用例明细</h2>
+        <span id="table-note" class="mono"></span>
+      </div>
+      <div class="tw">
+        <table id="cases">
+          <thead><tr>
+            <th data-sort="id">用例</th>
+            <th data-sort="category">分类</th>
+            <th data-sort="rule_score" class="num">规则分</th>
+            <th data-sort="judge_score" class="num">Judge</th>
+            <th data-sort="t_sut" class="num">耗时</th>
+            <th data-sort="verdict">结论</th>
+            <th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="empty" id="empty" hidden>没有匹配的用例</div>
+    </section>
+
+    <section class="panel">
+      <div class="ph"><h2>Badcase</h2><span>必须落到 数据集 / 评测标准 / 模型能力 / Agent 链路</span></div>
+      <div class="bcards" id="badcards"></div>
+    </section>
+
+    <footer class="foot">
+      AgentEval v0.2 · 证据链（断言 · 回答 · Judge 理由 · SUT 耗时）逐条可查 ·
+      <span class="mono">python -m evalkit.cli serve</span>
+    </footer>
+  </main>
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <div class="mono did" id="d-id"></div>
+      <div class="dsub" id="d-sub"></div>
+    </div>
+    <div class="dact">
+      <button class="btn ghost sm" id="d-rerun">跑这套</button>
+      <button class="btn ghost sm icon" id="d-close">✕</button>
+    </div>
+  </div>
+  <div class="drawer-body" id="d-body"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+<script src="/ui/app.js"></script>
+</body>
+</html>
