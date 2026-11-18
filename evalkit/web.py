@@ -175,3 +175,76 @@ def build_html(runs_dir="runs", out="reports/dashboard.html", title="Agent 评�
 
 if __name__ == "__main__":
     print(build_html())
+
+
+def export_console(runs_dir="runs", out="reports/console.html"):
+    """把控制台打包成**单文件**：CSS/JS/数据全部内联，双击即可打开（file:// 也能跑）。
+
+    为什么要这个：控制台平时靠 `evalkit.cli serve` 提供接口，但发给别人 / 存档 /
+    离线演示时不该要求对方启动服务。快照模式和在线模式共用同一套前端代码。
+    """
+    import glob
+    import json
+
+    from .store import load_jsonl
+
+    ui = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
+    index = open(os.path.join(ui, "index.html"), encoding="utf-8").read()
+    css = open(os.path.join(ui, "styles.css"), encoding="utf-8").read()
+    js = open(os.path.join(ui, "app.js"), encoding="utf-8").read()
+
+    files = sorted(glob.glob(os.path.join(runs_dir, "*.jsonl")))
+    rows = [s for s in (summarize_file(f) for f in files) if s]
+    suites = {}
+    overview_rows = []
+    for f, s in zip(files, rows):
+        slug = os.path.splitext(os.path.basename(f))[0]
+        recs = load_jsonl(f)
+        suites[slug] = [{
+            "id": r.get("id"), "category": r.get("category"), "turns": r.get("turns"),
+            "answer": r.get("answer"), "rule_score": r.get("rule_score"),
+            "rule_pass": r.get("rule_pass"), "judge_score": r.get("judge_score"),
+            "risk_fail": r.get("risk_fail"), "t_sut": r.get("t_sut"),
+            "checks": r.get("checks") or [], "dim_scores": r.get("dim_scores") or {},
+            "judge_reason": (r.get("judge") or {}).get("reason"),
+            "error": r.get("error"), "retrieved": r.get("retrieved") or [],
+        } for r in recs]
+        overview_rows.append({
+            "slug": slug, "suite": s["suite"], "cases": s["cases"], "pass": s["pass"],
+            "rate": s["pass_rate"], "judge_n": s["judge_n"],
+            "judge_rate": s["judge_rate"] if s["judge_n"] else None,
+            "kappa": s["kappa"], "risk_fail": s["risk_fail"], "hit1": s["hit1"],
+            "p50": s["p50"], "p90": s["p90"], "badcases": s["badcases"],
+        })
+
+    cases = sum(r["cases"] for r in overview_rows)
+    passed = sum(r["pass"] for r in overview_rows)
+    jn = sum(r["judge_n"] for r in overview_rows)
+    jok = sum(round(r["judge_rate"] * r["judge_n"] / 100) for r in overview_rows if r["judge_n"])
+    snapshot = {
+        "overview": {
+            "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "runs_dir": "（静态快照）" + runs_dir,
+            "totals": {"systems": len(overview_rows), "cases": cases, "pass": passed,
+                       "rate": round(100.0 * passed / cases, 1) if cases else 0.0,
+                       "judge_n": jn,
+                       "judge_rate": round(100.0 * jok / jn, 1) if jn else None,
+                       "badcases": sum(len(r["badcases"]) for r in overview_rows),
+                       "risk_fail": sum(r["risk_fail"] for r in overview_rows)},
+            "suites": overview_rows,
+        },
+        "suites": suites,
+    }
+
+    html = index.replace('<link rel="stylesheet" href="/ui/styles.css">',
+                         "<style>\n" + css + "\n</style>")
+    html = html.replace('<script src="/ui/app.js"></script>',
+                        "<script>window.__SNAPSHOT__ = "
+                        + json.dumps(snapshot, ensure_ascii=False).replace("</", "<\\/")
+                        + ";</script>\n<script>\n" + js + "\n</script>")
+
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(html)
+    return out, {"systems": len(overview_rows), "cases": cases,
+                 "rate": snapshot["overview"]["totals"]["rate"], "size_kb": round(len(html) / 1024)}

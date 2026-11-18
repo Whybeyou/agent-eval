@@ -8,7 +8,15 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const fmt = (v, suf = "") => (v === null || v === undefined ? "—" : v + suf);
 const color = (rate) => (rate >= 90 ? COL.ok : rate >= 70 ? COL.warn : COL.bad);
 
+const SNAP = window.__SNAPSHOT__ || null;   // 单文件静态版：数据内联，不走网络
+
 async function api(path, opts) {
+  if (SNAP) {                                // 静态模式：把接口映射到内联数据
+    if (path === "/api/overview") return SNAP.overview;
+    const m = path.match(/^\/api\/suite\/(.+)$/);
+    if (m) return { slug: m[1], cases: SNAP.suites[m[1]] || [] };
+    if (path.startsWith("/api/run") || path === "/api/status") return { running: {}, last: null, log: {} };
+  }
   const r = await fetch(path, opts);
   if (!r.ok) throw new Error(`${path} → ${r.status}`);
   return r.json();

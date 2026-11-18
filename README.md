@@ -31,6 +31,7 @@ python -m evalkit.cli run suites/toy_agent suites/ecom_rag   # 离线跑两个�
 python -m evalkit.cli report runs/                  # 出跨系统看板（Markdown）
 python -m evalkit.cli web                           # 出静态 HTML 看板（单文件，离线可开）
 python -m evalkit.cli serve --port 8030             # 起 Web 控制台 → http://127.0.0.1:8030
+python -m evalkit.cli web --console                 # 导出「单文件控制台」：双击就开，不用起服务
 ```
 
 ```
@@ -153,7 +154,18 @@ idempotent / http_status / api_shape / lineage_has / no_metric`——判的是�
 - 「跑这套」真的会调 `POST /api/run/{slug}` 后台跑批，轮询状态后自动刷新
 
 接口：`/api/overview`、`/api/suite/{slug}`、`/api/run/{slug}`、`/api/status`；
-前端是无框架无 CDN 的三个静态文件（`evalkit/ui/`），离线可用。
+前端是无框架无 CDN 的三个静态文件（`evalkit/ui/`）。
+
+**三种打开方式**（同一个前端，三种数据来源）：
+
+| 方式 | 命令 | 适用 |
+|---|---|---|
+| 在线控制台 | `evalkit.cli serve --port 8030` | 日常盯盘，含「跑这套」按钮 |
+| 单文件控制台 | `evalkit.cli web --console --out console.html` | 双击即开、发给别人、离线演示（数据内联） |
+| 静态 Markdown/HTML 看板 | `evalkit.cli report` / `web` | 归档、贴进 PR |
+
+单文件模式靠 `window.__SNAPSHOT__`：前端把 `/api/*` 映射到内联数据，代码一份、来源可变，
+不需要为了离线再写一套页面。
 
 **编辑册页报告**（`python -m evalkit.cli report-html --suite gis_agent`）——Decide/Learn 型：
 衬线大标题 + 双线页眉 + 细栅格线 + 砖红强调，一页讲清「多少用例达标、哪些待修、为什么」。

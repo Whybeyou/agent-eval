@@ -105,6 +105,11 @@ def cmd_serve(args):
 
 
 def cmd_web(args):
+    if getattr(args, "console", False):
+        path, info = web.export_console(args.runs, args.out)
+        print(f"{path}（单文件控制台：{info['systems']} 个系统 / {info['cases']} 条 / "
+              f"{info['rate']}% / {info['size_kb']}KB，双击即可打开）")
+        return 0
     path, info = web.build_html(args.runs, args.out)
     print(f"{path}\n接入 {info['systems']} 个系统，{info['cases']} 条用例，"
           f"规则通过率 {info['rate']}%，badcase {info['badcases']} 条")
@@ -154,6 +159,7 @@ def main(argv=None):
     p_web = sub.add_parser("web", help="生成自包含 HTML 看板（离线可开）")
     p_web.add_argument("runs", nargs="?", default="runs")
     p_web.add_argument("--out", default="reports/dashboard.html")
+    p_web.add_argument("--console", action="store_true", help="导出单文件控制台（内联数据，file:// 可开）")
     p_web.set_defaults(func=cmd_web)
 
     args = ap.parse_args(argv)
