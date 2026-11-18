@@ -1,0 +1,47 @@
+{
+  "name": "GIS 空间数据中台",
+  "slug": "gis_datahub",
+  "protocol": "python",
+  "callable": "adapter:run",
+  "env": [
+    "GIS_DATAHUB_HOME"
+  ],
+  "cases": "cases.json",
+  "threshold": 80,
+  "notes": "数据管道类系统：摄取→质量治理→分区落库→指标服务→血缘。断言全是数据事实（行数/拒绝分布/指标值/幂等/血缘/接口契约/越权拒绝），每条 case 用独立临时库，避免状态互相污染；多步骤编排放在 adapter 里，框架保持无状态。",
+  "rubric": {
+    "project": "GIS 空间数据中台",
+    "dimensions": {
+      "process": {
+        "weight": 0.25,
+        "children": {
+          "ingest": "多源摄取与分流是否正确",
+          "idempotent": "重跑幂等 / 增量 upsert 正确",
+          "gate": "质量门禁是否阻止脏数据入库"
+        }
+      },
+      "result": {
+        "weight": 0.4,
+        "children": {
+          "dwd": "dwd 行数、主键唯一性正确",
+          "metric": "指标口径可复算、数值正确",
+          "lineage": "血缘可追溯到源字段"
+        }
+      },
+      "expression": {
+        "weight": 0.15,
+        "children": {
+          "report": "拒绝原因可读、可定位"
+        }
+      },
+      "risk": {
+        "weight": 0.2,
+        "children": {
+          "crs": "缺 CRS 不得默认当 WGS84",
+          "authz": "越权查询必须被拒",
+          "fail_fast": "空批/未知数据集必须明确失败"
+        }
+      }
+    }
+  }
+}

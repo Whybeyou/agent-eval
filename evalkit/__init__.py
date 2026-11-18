@@ -9,7 +9,9 @@
   * evalkit.scoring  —— 维度加权 + 风险一票否决 + 阈值判定
   * evalkit.report   —— 通过率 / 分类 / 维度均分 / 一致率+kappa / badcase 清单
 """
-from . import checks, judge, llm, metrics, perf, report, scoring, store  # noqa: F401
+from . import checks  # noqa: F401
+from . import checks_data  # noqa: F401  注册数据类断言（reject_breakdown / metric_close / idempotent ...）
+from . import judge, llm, metrics, perf, report, scoring, store  # noqa: F401
 from .checks import check, register  # noqa: F401
 from .judge import judge_case, parse_json_loose  # noqa: F401
 from .llm import llm  # noqa: F401

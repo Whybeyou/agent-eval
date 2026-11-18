@@ -1,0 +1,455 @@
+[
+  {
+    "id": "DH-P01",
+    "category": "正向-摄取",
+    "task": "多源摄取 + 质量分流（6 行进 3 行脏，3 行入 dwd）",
+    "turns": [
+      "跑一批 parcels"
+    ],
+    "scenario": "full_batch",
+    "golden": {
+      "facts": [
+        "6 行进来",
+        "拒绝 3 行（重复主键/负面积/空几何）",
+        "dwd 3 行"
+      ]
+    },
+    "checks": [
+      {
+        "id": "rows",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "rows_in",
+          "equals": 6
+        }
+      },
+      {
+        "id": "good",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "rows_good",
+          "equals": 3
+        }
+      },
+      {
+        "id": "rej",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "rows_rejected",
+          "equals": 3
+        }
+      },
+      {
+        "id": "dwd",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "dwd_rows",
+          "equals": 3
+        }
+      },
+      {
+        "id": "status",
+        "dim": "process",
+        "type": "json_field",
+        "params": {
+          "field": "quality_status",
+          "equals": "warn"
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-P02",
+    "category": "正向-质量",
+    "task": "拒绝原因按规则可分解（能定位到哪条规则拦的）",
+    "turns": [
+      "看拒绝分布"
+    ],
+    "scenario": "full_batch",
+    "golden": {
+      "facts": [
+        "unique:parcel_id 1 行",
+        "range:area_m2 1 行",
+        "geom_valid 1 行"
+      ]
+    },
+    "checks": [
+      {
+        "id": "breakdown",
+        "dim": "result",
+        "type": "reject_breakdown",
+        "params": {
+          "expect": {
+            "unique:parcel_id": 1,
+            "range:area_m2": 1,
+            "geom_valid": 1
+          }
+        }
+      },
+      {
+        "id": "reasons",
+        "dim": "expression",
+        "type": "contains_any",
+        "params": {
+          "any": [
+            "几何为空或非法",
+            "parcel_id 重复"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-P03",
+    "category": "正向-指标",
+    "task": "指标口径可复算（面积合计 = dwd 面积和）",
+    "turns": [
+      "算面积指标"
+    ],
+    "scenario": "metric_value",
+    "golden": {
+      "facts": [
+        "parcels_total_area_km2 = 4400 m² / 1e6 = 0.0044"
+      ]
+    },
+    "checks": [
+      {
+        "id": "total",
+        "dim": "result",
+        "type": "metric_close",
+        "params": {
+          "name": "parcels_total_area_km2",
+          "expect": 0.0044,
+          "tol": 0.01
+        }
+      },
+      {
+        "id": "groups",
+        "dim": "result",
+        "type": "metric_keys",
+        "params": {
+          "name": "parcels_by_landuse",
+          "has": [
+            "住宅",
+            "商业",
+            "绿地"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-P04",
+    "category": "正向-幂等",
+    "task": "同一份文件重跑：不重复入账",
+    "turns": [
+      "重跑同一批"
+    ],
+    "scenario": "rerun_idempotent",
+    "golden": {
+      "facts": [
+        "第二次 skipped",
+        "dwd 行数不变"
+      ]
+    },
+    "checks": [
+      {
+        "id": "skip",
+        "dim": "process",
+        "type": "json_field",
+        "params": {
+          "field": "rerun_skipped",
+          "equals": true
+        }
+      },
+      {
+        "id": "same",
+        "dim": "process",
+        "type": "idempotent",
+        "params": {}
+      },
+      {
+        "id": "dwd",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "dwd_rows",
+          "equals": 3
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-P05",
+    "category": "正向-增量",
+    "task": "增量批次 upsert：只增不重",
+    "turns": [
+      "追加一批新地块"
+    ],
+    "scenario": "incremental_upsert",
+    "golden": {
+      "facts": [
+        "dwd 从 3 增到 5",
+        "本批 2 行全部合格"
+      ]
+    },
+    "checks": [
+      {
+        "id": "dwd",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "dwd_rows",
+          "equals": 5
+        }
+      },
+      {
+        "id": "good",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "rows_good",
+          "equals": 2
+        }
+      },
+      {
+        "id": "rej",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "rows_rejected",
+          "equals": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-P06",
+    "category": "负向-CRS",
+    "task": "缺 .prj 的 Shapefile：拒绝入库，不许默认 WGS84",
+    "turns": [
+      "处理一个没有坐标系的文件"
+    ],
+    "scenario": "crs_governance",
+    "golden": {
+      "facts": [
+        "quality_status=fail",
+        "dwd 不增长",
+        "原因说明缺坐标系"
+      ]
+    },
+    "checks": [
+      {
+        "id": "status",
+        "dim": "risk",
+        "type": "json_field",
+        "params": {
+          "field": "quality_status",
+          "equals": "fail"
+        }
+      },
+      {
+        "id": "notloaded",
+        "dim": "risk",
+        "type": "json_field",
+        "params": {
+          "field": "load_ok",
+          "equals": false
+        }
+      },
+      {
+        "id": "nodwd",
+        "dim": "risk",
+        "type": "json_field",
+        "params": {
+          "field": "dwd_rows",
+          "equals": 3
+        }
+      },
+      {
+        "id": "why",
+        "dim": "expression",
+        "type": "contains_any",
+        "params": {
+          "any": [
+            "坐标系"
+          ],
+          "body_only": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-P07",
+    "category": "正向-血缘",
+    "task": "指标能追到 dwd 字段、字段能追到源文件",
+    "turns": [
+      "查血缘"
+    ],
+    "scenario": "lineage",
+    "golden": {
+      "facts": [
+        "parcels_total_area_km2 ← dwd_parcels.area_m2"
+      ]
+    },
+    "checks": [
+      {
+        "id": "lin",
+        "dim": "result",
+        "type": "lineage_has",
+        "params": {
+          "fields": [
+            "dwd_parcels.area_m2"
+          ]
+        }
+      },
+      {
+        "id": "meta",
+        "dim": "result",
+        "type": "json_field",
+        "params": {
+          "field": "quality_status",
+          "equals": "warn"
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-P08",
+    "category": "正向-服务",
+    "task": "指标接口契约稳定（字段齐全、有数据）",
+    "turns": [
+      "调指标接口"
+    ],
+    "scenario": "api_contract",
+    "golden": {
+      "facts": [
+        "/metrics/summary 返回 metric/count/items"
+      ]
+    },
+    "checks": [
+      {
+        "id": "code",
+        "dim": "process",
+        "type": "http_status",
+        "params": {
+          "in": [
+            200
+          ]
+        }
+      },
+      {
+        "id": "shape",
+        "dim": "result",
+        "type": "api_shape",
+        "params": {
+          "keys": [
+            "metric",
+            "count",
+            "items"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-N01",
+    "category": "负向-越权",
+    "task": "任意 SQL 查询必须被拒（中台只开预定义接口）",
+    "turns": [
+      "select * from dwd_parcels"
+    ],
+    "scenario": "api_denied",
+    "golden": {
+      "facts": [
+        "403 拒绝"
+      ]
+    },
+    "checks": [
+      {
+        "id": "deny",
+        "dim": "risk",
+        "type": "http_status",
+        "params": {
+          "in": [
+            401,
+            403
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-N02",
+    "category": "负向-空批",
+    "task": "空文件必须明确失败，不产出指标",
+    "turns": [
+      "跑一个空文件"
+    ],
+    "scenario": "empty_batch",
+    "golden": {
+      "facts": [
+        "quality_status=fail",
+        "无 shops_ 指标"
+      ]
+    },
+    "checks": [
+      {
+        "id": "fail",
+        "dim": "risk",
+        "type": "json_field",
+        "params": {
+          "field": "quality_status",
+          "equals": "fail"
+        }
+      },
+      {
+        "id": "load",
+        "dim": "risk",
+        "type": "json_field",
+        "params": {
+          "field": "load_ok",
+          "equals": false
+        }
+      },
+      {
+        "id": "nometric",
+        "dim": "risk",
+        "type": "no_metric",
+        "params": {
+          "prefix": "shops_"
+        }
+      }
+    ]
+  },
+  {
+    "id": "DH-N03",
+    "category": "负向-未知数据集",
+    "task": "未知数据集必须明确报错，而不是静默成功",
+    "turns": [
+      "跑一个配置里没有的数据集"
+    ],
+    "scenario": "unknown_dataset",
+    "golden": {
+      "facts": [
+        "抛 ValueError，指出未知数据集"
+      ]
+    },
+    "checks": [
+      {
+        "id": "err",
+        "dim": "risk",
+        "type": "contains_any",
+        "params": {
+          "any": [
+            "未知数据集"
+          ]
+        }
+      }
+    ]
+  }
+]
