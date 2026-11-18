@@ -28,7 +28,9 @@
 git clone https://github.com/Whybeyou/agent-eval && cd agent-eval
 python -m evalkit.cli list                          # 有哪些系统、各自要不要连服务
 python -m evalkit.cli run suites/toy_agent suites/ecom_rag   # 离线跑两个自带示例
-python -m evalkit.cli report runs/                  # 出跨系统看板
+python -m evalkit.cli report runs/                  # 出跨系统看板（Markdown）
+python -m evalkit.cli web                           # 出静态 HTML 看板（单文件，离线可开）
+python -m evalkit.cli serve --port 8030             # 起 Web 控制台 → http://127.0.0.1:8030
 ```
 
 ```
@@ -137,6 +139,29 @@ idempotent / http_status / api_shape / lineage_has / no_metric`——判的是�
 
 某维度没有断言或全 NA → 权重重归一化，**不按 0 分算**（否则好结果会被拉成不及格）。
 
+## 两副面孔：控制台与报告
+
+同一份 `runs/*.jsonl`，两种排版语言，因为它们是两种界面（surface）：
+
+**监控舱控制台**（`python -m evalkit.cli serve`）——Monitor 型：盯状态、扫异常、下钻证据。
+
+- 左栏 6 个系统各带环形通过率，悬停出现「▶ 跑这套」；点击只看该系统
+- 顶部 4 个 KPI：规则通过率 / Judge 一致率 / 待修 badcase / 接入系统
+- 通过率条按系统排序，琥珀=需关注、青绿=正常，单一信号色不靠彩虹
+- 明细表可按分数/耗时/Judge 排序，支持关键词与「只看失败」筛选
+- 点任意一行 → 右侧抽屉：输入、实际输出、每条断言、维度得分、Judge 理由、SUT 耗时
+- 「跑这套」真的会调 `POST /api/run/{slug}` 后台跑批，轮询状态后自动刷新
+
+接口：`/api/overview`、`/api/suite/{slug}`、`/api/run/{slug}`、`/api/status`；
+前端是无框架无 CDN 的三个静态文件（`evalkit/ui/`），离线可用。
+
+**编辑册页报告**（`python -m evalkit.cli report-html --suite gis_agent`）——Decide/Learn 型：
+衬线大标题 + 双线页眉 + 细栅格线 + 砖红强调，一页讲清「多少用例达标、哪些待修、为什么」。
+适合归档、贴进 README、发给面试官。
+
+> 为什么不把两者合成一个页面：控制台要密度和实时感，报告要节奏和留白；
+> 硬塞在一起就会变成「既不快也不好读」的中间态。
+
 ## 归因：评测的产出不是分数，是定位
 
 每条 badcase 必须落到四类之一，**先怀疑评测，再怀疑项目**：
@@ -190,7 +215,7 @@ suites/
 ├── gis_datahub/  # 11 条，数据管道（每条用独立临时库，避免状态污染）
 ├── ecom_rag/     # 16 条，纯标准库 BM25 离线示例
 └── toy_agent/    # 10 条，框架自检基线
-tests/            # 26 条平台自测（断言/数据断言/打分/κ/协议隔离/看板/落盘）
+tests/            # 29 条平台自测（断言/数据断言/打分/κ/协议隔离/看板/报告/接口/落盘）
 ```
 
 ## CI
@@ -199,7 +224,7 @@ tests/            # 26 条平台自测（断言/数据断言/打分/κ/协议隔
 
 | job | 内容 |
 |---|---|
-| `test` | 26 条平台自测 + 两个离线 suite 跑批 + **口径门禁**（通过率区间与 badcase 集合必须与预期一致，防判定漂移） |
+| `test` | 29 条平台自测 + 两个离线 suite 跑批 + **口径门禁**（通过率区间与 badcase 集合必须与预期一致，防判定漂移） |
 | `llm-judge` | 有 `DEEPSEEK_API_KEY` 时跑 `--judge`，一致率低于 60% 直接失败 |
 | `ecom-regression` | 电商示例单独跑，校验 Hit@1/@3 |
 

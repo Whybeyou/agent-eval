@@ -3,6 +3,8 @@ import json
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import evalkit  # noqa: E402
@@ -48,6 +50,7 @@ def test_report_html_editorial(tmp_path):
 
 
 def test_web_overview_reads_runs_dir(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi", reason="Web 控制台是可选依赖：pip install 'agent-eval-kit[web]'")
     runs = _seed(tmp_path)
     monkeypatch.setenv("EVALKIT_RUNS", runs)
     import importlib

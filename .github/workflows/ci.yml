@@ -18,7 +18,7 @@ jobs:
           cache: pip
 
       - name: install
-        run: python -m pip install -U pip pytest
+        run: python -m pip install -U pip pytest fastapi uvicorn httpx
 
       - name: 平台自测（断言 / 打分 / κ / 协议隔离 / 看板）
         run: pytest tests -q
