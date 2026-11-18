@@ -34,44 +34,55 @@ def check(name, ctx, params=None):
 
 
 # ------------------------------------------------------------------ 内置断言
-def _text(ctx):
-    return "\n".join(str(ctx.get(k) or "") for k in ("answer", "stdout", "stderr", "analysis"))
+CITE_RE = re.compile(r"[（(]?\s*来源[:：][^）)\n]*[）)]?")
+
+
+def _text(ctx, p=None):
+    """拼接可判定文本；p["body_only"]=True 时剔除「（来源：…）」段。
+
+    坑：引用标签里常含文档名（"发票开具::换开与重开"），断言若只看全文，
+    会被来源里的字眼命中共假通过——所以正文类断言建议一律开 body_only。
+    """
+    text = "\n".join(str(ctx.get(k) or "") for k in ("answer", "stdout", "stderr", "analysis"))
+    if p and p.get("body_only"):
+        text = CITE_RE.sub("", text)
+    return text
 
 
 @register("contains_any")
 def _contains_any(ctx, p):
-    text = _text(ctx)
+    text = _text(ctx, p)
     return any(s in text for s in p["any"])
 
 
 @register("contains_all")
 def _contains_all(ctx, p):
-    text = _text(ctx)
+    text = _text(ctx, p)
     return all(s in text for s in p["all"])
 
 
 @register("contains_n_of")
 def _contains_n_of(ctx, p):
-    text = _text(ctx)
+    text = _text(ctx, p)
     return sum(1 for s in p["any"] if s in text) >= p["n"]
 
 
 @register("not_contains")
 def _not_contains(ctx, p):
     """禁用词。注意：写完整谓语（"可以使用比特币"），否则会被 "不支持比特币" 命中。"""
-    text = _text(ctx)
+    text = _text(ctx, p)
     return not any(s in text for s in p["any"])
 
 
 @register("regex")
 def _regex(ctx, p):
-    return re.search(p["pattern"], _text(ctx), re.S | re.I) is not None
+    return re.search(p["pattern"], _text(ctx, p), re.S | re.I) is not None
 
 
 @register("not_regex")
 def _not_regex(ctx, p):
     """负向正则：命中即失败（例如答案里不许出现手机号）。"""
-    return re.search(p["pattern"], _text(ctx), re.S | re.I) is None
+    return re.search(p["pattern"], _text(ctx, p), re.S | re.I) is None
 
 
 @register("max_len")

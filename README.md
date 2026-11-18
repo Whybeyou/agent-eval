@@ -40,6 +40,21 @@ python examples/toy_agent/run_eval.py
 - TOY-N01 [负向-知识外]  失败断言=['no','no_halluc'] ← 知识库没有也硬编（幻觉，风险一票否决）
 ```
 
+还能跑一个**中文 RAG 客服**示例（BM25 检索 + 6 篇知识库 + 16 条固定集，同样离线）：
+
+```bash
+python examples/ecom_rag/run_eval.py
+```
+
+```
+[EC-M03] rule=  0.0 pass=False   ← 多轮指代：追问「运费谁出」被当成通用运费问题
+[EC-B01] rule= 50.0 pass=False   ← 一句话三个子问题，只答了发票那一个
+检索命中率：Hit@1 90.0%  Hit@3 100.0%
+通过率 87.5% (14/16)
+```
+
+这两个 badcase 很典型：**检索没错，是 Agent 的上下文处理和答案组织错了**——只看 Retrieval Hit 会误判成「系统没问题」。
+
 想要 Judge 也参与：
 
 ```bash
@@ -96,6 +111,9 @@ python -m evalkit.report results.jsonl --name "我的 Agent"
 | `cite_from` | 引用必须来自给定来源且带「来源」标注 |
 | `json_field` | 结构化字段比较（缺失返回 NA） |
 
+文本类断言都支持 `"body_only": true`：先剔除「（来源：…）」引用段再匹配。**有引用输出的系统务必打开**，
+否则文档名里的字眼会让断言假通过（踩过，见坑 #11）。
+
 领域断言用 `@evalkit.register("crs_family")` 扩展，返回 `True / False / None(NA)`。
 
 ## 打分规则
@@ -123,6 +141,8 @@ python -m evalkit.report results.jsonl --name "我的 Agent"
 8. **评测器自己崩**：numpy 标量让 `json.dumps` 直接抛错，整条记录丢失。→ 落盘前 `bool()`/`default=` 兜底。
 9. **局部重跑清空历史**：`--only` 重跑时把结果文件删了，基线没了。→ 先按 id 过滤再追加。
 10. **安全/标准改动必须回放**：加固后没重跑全量，把「模型改好了」误判成「又违规了」。
+11. **引用标签污染断言**：答案带了 `（来源：发票开具::换开与重开）`，断言「换开」被文档名命中 → 假通过。→ 文本断言开 `body_only`。
+12. **检索命中率≠答对**：电商 RAG 的 Hit@1 是 90%，但通过率只有 87.5%，两个 badcase 都是「检索对了、答偏了」。→ 命中率与通过率分开报，别用一个数盖住两类问题。
 
 ## 归因（执行环节的核心）
 
@@ -147,13 +167,20 @@ evalkit/
 ├── report.py    # 一键出 Markdown 报告
 ├── perf.py      # 流式 TTFT/TPOT 探针 + Agent 端到端分位
 └── llm.py       # OpenAI 兼容调用（key 只从环境变量读）
-examples/toy_agent/   # 可离线跑的完整示例（10 条 case，含 2 个刻意缺陷）
-tests/                # 15 条框架自测（断言/打分/kappa/落盘/汇总）
+examples/toy_agent/   # 示例一：规则型客服（10 条 case，含 2 个刻意缺陷）
+examples/ecom_rag/    # 示例二：中文 RAG 客服（BM25 检索 + 16 条 case + Hit@1/@3）
+tests/                # 16 条框架自测（断言/打分/kappa/落盘/汇总/引用剔除）
 ```
 
 ## CI
 
-`.github/workflows/ci.yml`：`pytest` 全绿 + 跑示例并校验「通过率落在预期区间」（防止框架改动导致判定漂移）+ 上传结果 artifact。
+`.github/workflows/ci.yml`：
+
+| job | 内容 |
+|---|---|
+| `test` | 16 条框架自测 + 两个示例离线跑批 + **口径门禁**（通过率、badcase 集合必须与预期一致，防判定漂移） |
+| `llm-judge` | 有 `DEEPSEEK_API_KEY` secret 时跑 `EVAL_JUDGE=1`，出人机一致率；无 secret 自动跳过 |
+| `ecom-regression` | 电商示例单独跑，校验 Hit@1/@3 与通过率 |
 
 ## 许可
 

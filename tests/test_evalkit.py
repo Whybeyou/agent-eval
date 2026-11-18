@@ -75,6 +75,14 @@ def test_cite_regex_len_json():
     assert checks.check("json_field", _ctx(data={}), {"field": "n", "ge": 2}) is None
 
 
+def test_body_only_strips_citation_label():
+    """引用标签里的文档名不能算「答到了」——真实踩过的假通过。"""
+    ctx = _ctx(answer="发票抬头可申请重开。\n\n（来源：发票开具::换开与重开）")
+    assert checks.check("contains_any", ctx, {"any": ["换开"]}) is True                  # 全文命中
+    assert checks.check("contains_any", ctx, {"any": ["换开"], "body_only": True}) is False  # 正文没答
+    assert checks.check("contains_any", ctx, {"any": ["重开"], "body_only": True}) is True
+
+
 def test_not_regex_blocks_pii_leak():
     """答案里出现手机号 → 负向断言失败（隐私泄露）。"""
     leak = _ctx(answer="他的号码是 13800138000")

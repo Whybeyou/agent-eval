@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: pytest + 示例跑批
+    name: pytest + 示例跑批（口径门禁）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,28 +23,95 @@ jobs:
       - name: framework tests
         run: pytest tests -q
 
-      - name: run toy example (offline, no key)
+      - name: example 1 — toy agent (rule-only)
         run: python examples/toy_agent/run_eval.py
 
-      - name: gate on expected pass rate
-        # 示例里刻意留了 2 个缺陷 → 通过率应该稳定在 80%，判定漂移就说明框架行为变了
+      - name: example 2 — ecom rag (bm25 + hit rate)
+        run: python examples/ecom_rag/run_eval.py
+
+      - name: gate on expected numbers
+        # 两个示例都刻意留了缺陷：通过率与 badcase 集合一旦变化，说明判定逻辑被改动了
         run: |
           python - <<'PY'
-          import json, sys
-          recs = [json.loads(l) for l in open("examples/toy_agent/results/toy_results.jsonl", encoding="utf-8") if l.strip()]
-          passed = sum(1 for r in recs if r["rule_pass"])
-          rate = 100.0 * passed / len(recs)
-          print(f"cases={len(recs)} passed={passed} rate={rate:.1f}%")
-          assert len(recs) == 10, "用例数量变了"
-          assert 70 <= rate <= 90, f"通过率漂移：{rate:.1f}%"
-          bad = [r["id"] for r in recs if not r["rule_pass"]]
-          print("badcases:", bad)
-          assert bad == ["TOY-B01", "TOY-N01"], bad
+          import json
+
+          def load(p):
+              return [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+
+          toy = load("examples/toy_agent/results/toy_results.jsonl")
+          toy_bad = sorted(r["id"] for r in toy if not r["rule_pass"])
+          toy_rate = 100.0 * sum(1 for r in toy if r["rule_pass"]) / len(toy)
+          print(f"toy: n={len(toy)} rate={toy_rate:.1f}% bad={toy_bad}")
+          assert len(toy) == 10, "用例数量变了"
+          assert 70 <= toy_rate <= 90, f"toy 通过率漂移 {toy_rate:.1f}%"
+          assert toy_bad == ["TOY-B01", "TOY-N01"], toy_bad
+
+          ec = load("examples/ecom_rag/results/ecom_results.jsonl")
+          ec_bad = sorted(r["id"] for r in ec if not r["rule_pass"])
+          ec_rate = 100.0 * sum(1 for r in ec if r["rule_pass"]) / len(ec)
+          hit = [r for r in ec if r.get("hit1") is not None]
+          h1 = sum(1 for r in hit if r["hit1"]) / len(hit)
+          print(f"ecom: n={len(ec)} rate={ec_rate:.1f}% hit@1={h1:.1%} bad={ec_bad}")
+          assert len(ec) == 16, "用例数量变了"
+          assert 80 <= ec_rate <= 95, f"ecom 通过率漂移 {ec_rate:.1f}%"
+          assert ec_bad == ["EC-B01", "EC-M03"], ec_bad
+          assert h1 >= 0.85, f"Hit@1 掉了：{h1:.1%}"
           PY
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: toy-eval-results
-          path: examples/toy_agent/results/
+          name: eval-results
+          path: |
+            examples/toy_agent/results/
+            examples/ecom_rag/results/
+          if-no-files-found: warn
+
+  llm-judge:
+    name: LLM-Judge 一致率（需要 DEEPSEEK_API_KEY）
+    runs-on: ubuntu-latest
+    # fork 发起的 PR 拿不到 secret，这类场景直接跳过
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 检查 secret（没有就跳过，不让公开仓库的 contributor 卡住）
+        id: key
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=跳过::未配置 DEEPSEEK_API_KEY，跳过 LLM-Judge"
+          else
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: LLM-Judge 跑电商示例
+        if: steps.key.outputs.has_key == 'true'
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          EVAL_JUDGE: "1"
+        run: |
+          python examples/ecom_rag/run_eval.py
+          python - <<'PY'
+          import json
+          recs = [json.loads(l) for l in open("examples/ecom_rag/results/ecom_results.jsonl", encoding="utf-8") if l.strip()]
+          judged = [r for r in recs if r.get("judge_pass") is not None]
+          assert judged, "Judge 一条都没判出来（看 key 或配额）"
+          agree = sum(1 for r in judged if bool(r["judge_pass"]) == bool(r["rule_pass"]))
+          rate = 100.0 * agree / len(judged)
+          print(f"judge n={len(judged)} agreement={rate:.1f}%")
+          # 一致率过低说明 Rubric 有歧义，需要人工校准，不该直接放行
+          assert rate >= 60, f"人机一致率过低：{rate:.1f}%"
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: judge-results
+          path: examples/ecom_rag/results/
           if-no-files-found: warn
