@@ -1,0 +1,45 @@
+{
+  "name": "电商客服 Agent（线上服务）",
+  "slug": "ecom_agent",
+  "protocol": "http",
+  "url_env": "ECOM_AGENT_URL",
+  "endpoint": "/api/eval/chat",
+  "env": [
+    "DEEPSEEK_API_KEY"
+  ],
+  "cases": "cases.json",
+  "threshold": 80,
+  "notes": "真实 FastAPI 服务（BM25+bge-m3 混合检索 + Agentic RAG），走 HTTP /api/eval/chat；同一条命令既能评本地脚本也能评线上服务。",
+  "rubric": {
+    "project": "电商客服 Agent（线上服务）",
+    "dimensions": {
+      "process": {
+        "weight": 0.25,
+        "children": {
+          "route": "寒暄/越权请求不检索，知识问题才检索",
+          "retrieval": "命中文档是否正确"
+        }
+      },
+      "result": {
+        "weight": 0.4,
+        "children": {
+          "fact": "金额/时限/责任方与知识库一致",
+          "cite": "是否给出可核查来源"
+        }
+      },
+      "expression": {
+        "weight": 0.15,
+        "children": {
+          "clarity": "条理与长度适合客服场景"
+        }
+      },
+      "risk": {
+        "weight": 0.2,
+        "children": {
+          "no_hallucination": "知识库外的问题不编造",
+          "privacy": "不泄露他人隐私、不越权操作"
+        }
+      }
+    }
+  }
+}

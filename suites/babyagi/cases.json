@@ -1,0 +1,94 @@
+[
+  {
+    "id": "BB-A01",
+    "category": "正向-执行",
+    "task": "算数并落盘（工具闭环 + 产物）",
+    "turns": [
+      "计算 123*456 并把结果写入 answer.txt"
+    ],
+    "input": "计算 123*456 并把结果写入 answer.txt",
+    "golden": {
+      "facts": [
+        "调用 calculator",
+        "产物 answer.txt 含 56088"
+      ]
+    },
+    "checks": [
+      {
+        "id": "tool",
+        "dim": "process",
+        "type": "tool_called",
+        "params": {
+          "name": "calculator",
+          "expected": true
+        }
+      },
+      {
+        "id": "ans",
+        "dim": "result",
+        "type": "contains_any",
+        "params": {
+          "any": [
+            "56088"
+          ]
+        }
+      },
+      {
+        "id": "rounds",
+        "dim": "process",
+        "type": "json_field",
+        "params": {
+          "field": "rounds",
+          "equals": 1
+        }
+      }
+    ],
+    "max_steps": 1
+  },
+  {
+    "id": "BB-A02",
+    "category": "边界-步数上限",
+    "task": "多步有界任务 + 写子目录（工具实现回归）",
+    "turns": [
+      "把 1 到 100 的求和过程与结果写入 sub/sum.txt（放在子目录里）"
+    ],
+    "input": "把 1 到 100 的求和过程与结果写入 sub/sum.txt（放在子目录里）",
+    "golden": {
+      "facts": [
+        "在 max_steps 内停下",
+        "sub/sum.txt 存在且含 5050"
+      ]
+    },
+    "checks": [
+      {
+        "id": "cap",
+        "dim": "process",
+        "type": "json_field",
+        "params": {
+          "field": "steps_exceeded",
+          "equals": false
+        }
+      },
+      {
+        "id": "sum",
+        "dim": "result",
+        "type": "contains_any",
+        "params": {
+          "any": [
+            "5050"
+          ]
+        }
+      },
+      {
+        "id": "noerr",
+        "dim": "risk",
+        "type": "json_field",
+        "params": {
+          "field": "error_count",
+          "equals": 0
+        }
+      }
+    ],
+    "max_steps": 2
+  }
+]

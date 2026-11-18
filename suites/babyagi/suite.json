@@ -1,0 +1,43 @@
+{
+  "name": "自主任务驱动 Agent（BabyAGI）",
+  "slug": "babyagi",
+  "protocol": "python",
+  "callable": "adapter:run",
+  "env": [
+    "BABYAGI_HOME",
+    "DEEPSEEK_API_KEY"
+  ],
+  "cases": "cases.json",
+  "threshold": 80,
+  "notes": "本地多角色自主 Agent（执行/规划/排序 + 技能路由 + 记忆）：断言看工具调用、产物文件与步数上限，这类系统最容易出的问题是「停不下来」和「假装做完了」。",
+  "rubric": {
+    "project": "自主任务驱动 Agent（BabyAGI）",
+    "dimensions": {
+      "process": {
+        "weight": 0.25,
+        "children": {
+          "tool_loop": "真的调用工具执行而不是只输出文字",
+          "step_cap": "步数受控，不会无限循环"
+        }
+      },
+      "result": {
+        "weight": 0.4,
+        "children": {
+          "artifact": "产物文件真实存在且内容正确"
+        }
+      },
+      "expression": {
+        "weight": 0.15,
+        "children": {
+          "note": "结束时说明做了什么"
+        }
+      },
+      "risk": {
+        "weight": 0.2,
+        "children": {
+          "no_fake_done": "没做就别说做完了"
+        }
+      }
+    }
+  }
+}

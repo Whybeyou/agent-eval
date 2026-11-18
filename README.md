@@ -1,175 +1,187 @@
 # agent-eval
 
-给 LLM Agent 用的**轻量评测框架**：固定集 + 规则机评 & LLM-Judge 双轨 + 加权打分 + Badcase 归因。
+**一套 Agent 评测平台**：用统一协议接入多个真实系统 → 同一套用例与指标 → 一张跨系统看板。
 
-目标不是刷分，而是**定位缺陷并归因**——把「模型能力问题」和「Agent 链路问题 / 数据集问题 / 评测标准问题」分开，
-不然每次都是拍脑袋改 prompt。
+它不是"给某个项目写几个测试脚本"，而是把评测做成**可复用的一层**：
+新接一个系统只写一个 `adapter.py`（或让它暴露一个 `/api/eval/chat`），
+用例、打分、一致率、看板、CI 门禁全部复用。
 
 ![ci](https://github.com/Whybeyou/agent-eval/actions/workflows/ci.yml/badge.svg)
 
-## 它解决什么
+## 当前接入的 4 个系统（实测）
 
-工业界常见的两种失败模式：
+| 被测系统 | 协议 | 用例 | 规则通过率 | Judge 通过率 | 一致率 κ | Hit@1 | SUT p50 |
+|---|---|---|---|---|---|---|---|
+| GIS 数据处理 Agent（自然语言→GIS 代码→沙箱执行） | python | 17 | 88.2% (15/17) | 82.4% | 0.767 | — | 4.91s |
+| 电商客服 Agent（FastAPI 线上服务，混合检索 + Agentic RAG） | **http** | 8 | 100% (8/8) | 100% | 1.0 | 80% | 3.37s |
+| 自主任务驱动 Agent（BabyAGI：执行/规划/排序 + 技能路由 + 记忆） | python | 2 | 100% (2/2) | — | — | — | 34.0s |
+| 电商 RAG（本地 BM25 示例，离线可跑） | python | 16 | 87.5% (14/16) | — | — | 90% | — |
+| 玩具客服（框架自检基线） | python | 10 | 80% (8/10) | — | — | — | — |
 
-1. **只测通用指标**（answer relevancy 之类）→ 判不了「CRS 是不是 EPSG:4490」「行数是不是等于过滤后数量」「有没有真的调工具」这种**领域硬事实**；
-2. **只让 LLM 打分** → 它不会数数（8 条和 9 条它说「差不多」），也无法解释某条为什么挂。
+合计 **53 条用例，规则机评 88.7%（47/53）**；有 Judge 的 25 条一致率 88.0%。
+每个系统都**故意留了未修的 badcase**——评测的价值在于把它们钉在名单上（见下方"归因"）。
 
-所以本框架把判定拆成两条独立的轨：
-
-```
-             ┌─ 规则机评（硬断言）：可执行 / 数值 / 行数 / 工具调用 / 引用 / 越权
-case ────────┤
-             └─ LLM-Judge（语义）：完整度、语气、意图把握
-                          ↓
-              维度加权 + 风险一票否决 → pass/fail
-                          ↓
-              一致率（规则 vs Judge）→ 低就说明「标准本身有歧义」，先改 Rubric 再改项目
-```
-
-## 快速开始（30 秒，不需要 API key）
+## 30 秒上手（不需要 API key）
 
 ```bash
 git clone https://github.com/Whybeyou/agent-eval && cd agent-eval
-python examples/toy_agent/run_eval.py
+python -m evalkit.cli list                          # 有哪些系统、各自要不要连服务
+python -m evalkit.cli run suites/toy_agent suites/ecom_rag   # 离线跑两个自带示例
+python -m evalkit.cli report runs/                  # 出跨系统看板
 ```
 
-示例里的「玩具客服 Agent」故意留了两个缺陷，跑完你会看到 `80% (8/10)` 和两条 badcase：
-
 ```
-- TOY-B01 [边界-长问题]  失败断言=['cover']        ← 长问题只答前半（完整度）
-- TOY-N01 [负向-知识外]  失败断言=['no','no_halluc'] ← 知识库没有也硬编（幻觉，风险一票否决）
+### Agent 评测看板
+接入 **5** 个被测系统，共 **53** 条用例；规则机评合计 **88.7%**（47/53），LLM-Judge 判定 25 条（通过率 88.0%）
+
+| 被测系统 | 用例 | 规则通过率 | Judge 通过率 | 一致率 κ | 风险失败 | Hit@1 | SUT p50 / p90 |
+|---|---|---|---|---|---|---|---|
+| 电商客服 Agent（线上服务） | 8 | 100.0% (8/8) | 100.0% | 1.0 | 0 | 80.0% | 3.37s / 5.28s |
+| GIS 数据处理 Agent | 17 | 88.2% (15/17) | 82.4% | 0.767 | 1 | — | 4.91s / 7.04s |
+| 电商 RAG（本地 BM25 示例） | 16 | 87.5% (14/16) | — | — | 0 | 90.0% | — |
+| 玩具客服 Agent（基线） | 10 | 80.0% (8/10) | — | — | 1 | — | — |
 ```
 
-还能跑一个**中文 RAG 客服**示例（BM25 检索 + 6 篇知识库 + 16 条固定集，同样离线）：
+要连真实服务：
 
 ```bash
-python examples/ecom_rag/run_eval.py
+export GIS_AGENT_HOME=/path/to/gis-agent      # python 协议：直连被测项目
+export ECOM_AGENT_URL=http://127.0.0.1:8010   # http 协议：线上服务
+python -m evalkit.cli run suites/ --judge --env-file .env
 ```
 
+## 体系结构
+
 ```
-[EC-M03] rule=  0.0 pass=False   ← 多轮指代：追问「运费谁出」被当成通用运费问题
-[EC-B01] rule= 50.0 pass=False   ← 一句话三个子问题，只答了发票那一个
-检索命中率：Hit@1 90.0%  Hit@3 100.0%
-通过率 87.5% (14/16)
-```
-
-这两个 badcase 很典型：**检索没错，是 Agent 的上下文处理和答案组织错了**——只看 Retrieval Hit 会误判成「系统没问题」。
-
-想要 Judge 也参与：
-
-```bash
-export DEEPSEEK_API_KEY=...        # 或 EVAL_KEY_ENV 指定别的变量名
-EVAL_JUDGE=1 python examples/toy_agent/run_eval.py
+              ┌───────────────────── 同一套用例 / Rubric / 指标 ─────────────────────┐
+              │                                                                     │
+ suites/gis_agent/adapter.py ──┐                                     ┌── 规则机评（硬事实）
+ suites/babyagi/adapter.py  ──┼──► evalkit.runner ──► 记录 JSONL ──┼── LLM-Judge（语义）
+ suites/ecom_agent (HTTP)   ──┘        │                            └── 一致率 / κ
+                                       │
+                                  dashboard ──► 跨系统看板（一张表）
+                                       │
+                                  CI 门禁（新增 badcase 即失败）
 ```
 
-## 接入自己的 Agent
+一条 case 的固定流程：**取输入 → 调 SUT（两种协议之一）→ 归一化 → 断言 + Judge → 加权打分 → 落 JSONL → 汇总看板**。
 
-只要你的 Agent 能返回这个形状：
+## 接入一个新系统
 
-```python
-{"answer": str, "tool_calls": [{"name": "search_knowledge", "query": "..."}], "data": {...}}
+写两个文件就够：
+
+```
+suites/my_agent/
+├── suite.json     # 协议、用例文件、阈值、Rubric
+├── cases.json     # 用例（声明式断言）
+└── adapter.py     # 只有 python 协议需要
 ```
 
-然后写一份 `cases.json`（声明式断言，加用例不用改代码）：
+`suite.json`：
 
 ```json
 {
-  "id": "P01", "category": "正向", "turns": ["买了衣服尺码不合适能退吗"],
-  "task": "退货政策硬事实",
-  "golden": {"facts": ["7 天内", "不影响二次销售"]},
+  "name": "我的 Agent", "slug": "my_agent",
+  "protocol": "http",  "url_env": "MY_AGENT_URL", "endpoint": "/api/eval/chat",
+  "cases": "cases.json", "threshold": 80,
+  "rubric": {"dimensions": {"process": {"weight": 0.25}, "result": {"weight": 0.40},
+                            "expression": {"weight": 0.15}, "risk": {"weight": 0.20}}}
+}
+```
+
+**两种协议**（`evalkit/sut.py`）：
+
+| 协议 | 适用 | 约定 |
+|---|---|---|
+| `python` | 本地脚本 / 同机项目 | `adapter.run(turns, case) -> {"answer", "tool_calls", "data"}` |
+| `http` | 线上服务 | `POST /api/eval/chat`，请求 `{"turns": [...]}`，响应同上 |
+
+服务侧只要实现这一个出口，内部怎么走（检索、生成代码、沙箱执行）评测器不管。
+`missing_env` 会让缺依赖的 suite 自动跳过，而不是报错中断整批。
+
+## 用例长什么样
+
+```json
+{
+  "id": "ECA-P01", "category": "正向-知识", "task": "退货运费责任方",
+  "turns": ["七天无理由退货的退货运费谁承担？"],
+  "golden": {"source": "退换货政策", "facts": ["买家承担"]},
   "checks": [
-    {"id": "route", "dim": "process", "type": "tool_called", "params": {"expected": true}},
-    {"id": "f1",    "dim": "result",  "type": "contains_all", "params": {"all": ["7 天", "二次销售"]}},
-    {"id": "cite",  "dim": "result",  "type": "cite_from", "params": {"any": ["退换货政策"]}}
+    {"id": "fact",  "dim": "result",  "type": "contains_all", "params": {"all": ["买家", "承担"]}},
+    {"id": "route", "dim": "process", "type": "tool_called",  "params": {"name": "search_knowledge", "expected": true}}
   ]
 }
 ```
 
-跑批只需要三行：
+内置断言：`contains_any / contains_all / contains_n_of / not_contains / regex / not_regex / max_len /
+min_len / tool_called / cite_from / json_field`；领域断言用 `@register("rows_eq")` 扩展
+（GIS suite 就是这么接进来的：行数、CRS、面积、字段、AST 越权——全部读产物本身，不看模型自述）。
 
-```python
-checks, dim_hits = evalkit.run_checks(case, ctx, evalkit.check)
-scored           = evalkit.score_case(dim_hits)
-evalkit.append_jsonl("results.jsonl", {**rec, **scored})
-```
+文本类断言支持 `"body_only": true`：先剔除「（来源：…）」再匹配，否则文档名会让断言假通过。
 
-汇总：
+## 指标口径
 
-```bash
-python -m evalkit.report results.jsonl --name "我的 Agent"
-```
-
-## 内置断言
-
-| 类型 | 用途 |
-|---|---|
-| `contains_any` / `contains_all` / `contains_n_of` | 关键词覆盖（any-of / all-of / N 个中几个） |
-| `not_contains` | 禁用词（**要带完整谓语**，见坑 #3） |
-| `regex` / `not_regex` | 格式校验、隐私泄露检测（手机号） |
-| `max_len` / `min_len` | IM 场景长度控制 |
-| `tool_called` | 路由决策：该检索才检索、寒暄不检索（`soft` 表示拿不准时不惩罚） |
-| `cite_from` | 引用必须来自给定来源且带「来源」标注 |
-| `json_field` | 结构化字段比较（缺失返回 NA） |
-
-文本类断言都支持 `"body_only": true`：先剔除「（来源：…）」引用段再匹配。**有引用输出的系统务必打开**，
-否则文档名里的字眼会让断言假通过（踩过，见坑 #11）。
-
-领域断言用 `@evalkit.register("crs_family")` 扩展，返回 `True / False / None(NA)`。
-
-## 打分规则
-
-| 一级维度 | 默认权重 | 说明 |
+| 口径 | 定义 | 用途 |
 |---|---|---|
-| 过程 process | 0.25 | 意图理解、路由决策、工具调用、多轮承接 |
-| 结果 result | 0.40 | 事实/数值正确、交付契约、完整性 |
-| 表达 expression | 0.15 | 条理、长度、话术 |
-| 风险 risk | 0.20 | 越权、编造、破坏性操作 —— **一票否决** |
+| 规则通过率 | 加权总分 ≥ 阈值（80）且风险维度无 Fail | 主判据，进 CI 门禁 |
+| 人机一致率 / κ | 规则 verdict vs Judge verdict | 低 → 说明**标准本身有歧义**，先改 Rubric |
+| 风险一票否决 | 越权/编造/破坏性操作为 Fail 时整条不通过 | 安全底线，不被高分掩盖 |
+| Hit@1 / Hit@3 | 期望文档是否进 top-k | 区分「没检索到」与「检索到但答偏」 |
+| SUT p50 / p90 | 仅统计被测系统耗时（不含评测开销） | 性能回归 |
 
-- 单条：断言 0/10 → 维度均分 → 权重加权 → 0-100，`>= 80` 且风险无 Fail 才算通过。
-- 某维度没有断言或全 NA → **不参与计算**（权重归一化），而不是按 0 算。
-- 整体：固定集通过率（门槛一般 ≥90%）+ 一致率 + 分类通过率 + p50/p90 耗时。
+某维度没有断言或全 NA → 权重重归一化，**不按 0 分算**（否则好结果会被拉成不及格）。
 
-## 踩过的坑（这些规则都是血泪）
-
-1. **断言语义写反**：`stdout_has` 用 `all()` 实现，本该「任一命中」，结果 4 条正向用例集体假失败。→ 断言上线前先拿 2 条已知正例/反例自测。
-2. **NA 被当成 0**：某维度没设断言却按 0 分算，把好结果拉成不及格。→ 权重归一化。
-3. **禁用词没带谓语**：`forbid("支持比特币")` 会命中「**不**支持比特币」。→ 写完整断言「可以使用比特币」。
-4. **同义表述漏配**：断言「买家承担」漏掉「买家**自己**承担」。→ 用 `contains_all(["买家","承担"])` 而不是单一短语。
-5. **数量断言交给 LLM**：8 条 vs 9 条它能判「通过」。→ 数值/计数永远留给规则。
-6. **拿字符串扫描当安全断言**：代码里 `print('拒绝写入 C:\\Windows')` 被误判成违规。→ 走 AST（判断「有没有真的调用」），别看字面量。
-7. **kappa 在单边全过时无意义**：Judge 全通过时 κ 甚至为负。→ 只报一致率，或者两边都有人工校验过再算 κ。
-8. **评测器自己崩**：numpy 标量让 `json.dumps` 直接抛错，整条记录丢失。→ 落盘前 `bool()`/`default=` 兜底。
-9. **局部重跑清空历史**：`--only` 重跑时把结果文件删了，基线没了。→ 先按 id 过滤再追加。
-10. **安全/标准改动必须回放**：加固后没重跑全量，把「模型改好了」误判成「又违规了」。
-11. **引用标签污染断言**：答案带了 `（来源：发票开具::换开与重开）`，断言「换开」被文档名命中 → 假通过。→ 文本断言开 `body_only`。
-12. **检索命中率≠答对**：电商 RAG 的 Hit@1 是 90%，但通过率只有 87.5%，两个 badcase 都是「检索对了、答偏了」。→ 命中率与通过率分开报，别用一个数盖住两类问题。
-
-## 归因（执行环节的核心）
+## 归因：评测的产出不是分数，是定位
 
 每条 badcase 必须落到四类之一，**先怀疑评测，再怀疑项目**：
 
 | 类别 | 判据 | 处置 |
 |---|---|---|
-| 数据集问题 | 期望值写错、fixture 不真实、样本不具代表性 | 修数据，重跑，不进缺陷单 |
-| 评测标准问题 | 断言过窄/过宽、Judge 与人工分歧、权重不合理 | 改 Rubric/断言，人工抽检 20% 校准 |
-| 模型能力问题 | 上下文给全了模型仍推理错 | 换模型 / 加约束 / 给示例 |
-| Agent 链路问题 | 提示词与执行层契约不一致、工具决策错、上下文丢失、环境缺陷 | 改代码，加回归用例防复发 |
+| 数据集问题 | 期望值错、fixture 不真实/不存在 | 修数据，不进缺陷单 |
+| 评测标准问题 | 断言过窄/过宽、Judge 与人工分歧 | 改 Rubric，人工抽检 |
+| 模型能力问题 | 上下文给全仍答错 | 换模型 / 加约束 / 给示例 |
+| Agent 链路问题 | 契约不一致、工具实现 bug、状态丢失 | 改代码 + 补回归用例 |
+
+真实例子（都在本仓的 badcase 名单里）：
+
+- **数据集**：GIS-B03 在 CI 上必挂——case 用 `no_crs.shp`，但 fixtures 脚本只生成 `no_crs.geojson`。本地能过是因为有人手工放过一个 shp。→ 让脚本自己产出"删掉 .prj 的 Shapefile"。
+- **评测标准**：ECA-P01 第一次判错，答案是「由**买家（您）承担**」，断言写的是 `contains_all(["买家承担"])` → 括号打断了字面匹配。→ 改成语义组合 `["买家","承担"]`。
+- **Agent 链路**：BabyAGI 写 `sub/sum.txt` 直接 `FileNotFoundError`——`write_file` 工具没建父目录。→ 修工具，并把这条 case 留作回归。
+- **链路（跨系统）**：框架自身也曾把用例跑错对象——两个 suite 都有 `adapter.py`，`import_module` 命中 `sys.modules` 缓存，用 A 的适配器跑了 B 的用例。→ 改为按文件路径加载 + 唯一模块名，并加了 `test_two_suites_with_same_module_name_are_isolated` 回归测试。
+
+## 其它踩过的坑
+
+1. 断言 `any/all` 写反：`stdout_has` 用 `all()` 实现，本该"任一命中"，4 条正向用例集体假失败。
+2. NA 被当 0：某维度没断言却按 0 算，把好结果拉成不及格。→ 权重重归一化。
+3. 禁用词没带谓语：`forbid("支持比特币")` 会命中「**不**支持比特币」。→ 写完整断言。
+4. 数量断言交给 LLM：8 条 vs 9 条它说"差不多"。→ 计数/数值永远留给规则。
+5. 拿字符串扫描当安全断言：`print('拒绝写入 C:\\Windows')` 被误判违规。→ 走 AST 判断"有没有真的调用"。
+6. κ 在单边全过时无意义（甚至为负）。→ 只报一致率，或两边都人工校验后再算 κ。
+7. 评测器自己崩：numpy 标量让 `json.dumps` 抛错，整条记录丢失。→ 落盘前 `bool()` / `default=` 兜底。
+8. SUT 挂了要留记录，不能整批中断。→ 异常写进 `error` 字段并继续下一条。
 
 ## 目录结构
 
 ```
 evalkit/
-├── checks.py    # 断言注册表（8 种内置 + register 扩展）
-├── scoring.py   # 维度加权 + 风险否决 + 阈值
-├── judge.py     # LLM-Judge（强制 JSON、独立模型）
-├── metrics.py   # pct / percentile / kappa / agreement
-├── store.py     # JSONL 落盘、汇总、badcase 清单
-├── report.py    # 一键出 Markdown 报告
-├── perf.py      # 流式 TTFT/TPOT 探针 + Agent 端到端分位
-└── llm.py       # OpenAI 兼容调用（key 只从环境变量读）
-examples/toy_agent/   # 示例一：规则型客服（10 条 case，含 2 个刻意缺陷）
-examples/ecom_rag/    # 示例二：中文 RAG 客服（BM25 检索 + 16 条 case + Hit@1/@3）
-tests/                # 16 条框架自测（断言/打分/kappa/落盘/汇总/引用剔除）
+├── sut.py        # 两种接入协议：python 调用 / HTTP 服务（含模块隔离与归一化）
+├── runner.py     # suite 加载、单条执行、断言→打分→落盘、Hit@k
+├── cli.py        # list / run / report（--judge / --only / --env-file / --strict）
+├── checks.py     # 断言注册表
+├── scoring.py    # 维度加权 + 风险否决 + 阈值
+├── judge.py      # LLM-Judge（强制 JSON、与被测模型错开）
+├── metrics.py    # pct / percentile / kappa / agreement
+├── dashboard.py  # 跨系统看板
+├── store.py      # JSONL 落盘与单系统汇总
+├── report.py     # 单系统 Markdown 报告
+└── perf.py       # 流式 TTFT / TPOT 探针
+suites/
+├── gis_agent/    # 17 条 + fixtures 生成器 + 30 余个领域断言（python 协议）
+├── ecom_agent/   # 8 条，打真实 FastAPI 服务（http 协议）
+├── babyagi/      # 2 条，解析 stdout 与产物（python 协议）
+├── ecom_rag/     # 16 条，纯标准库 BM25 离线示例
+└── toy_agent/    # 10 条，框架自检基线
+tests/            # 21 条平台自测（断言/打分/κ/协议隔离/看板/落盘）
 ```
 
 ## CI
@@ -178,9 +190,12 @@ tests/                # 16 条框架自测（断言/打分/kappa/落盘/汇总/�
 
 | job | 内容 |
 |---|---|
-| `test` | 16 条框架自测 + 两个示例离线跑批 + **口径门禁**（通过率、badcase 集合必须与预期一致，防判定漂移） |
-| `llm-judge` | 有 `DEEPSEEK_API_KEY` secret 时跑 `EVAL_JUDGE=1`，出人机一致率；无 secret 自动跳过 |
-| `ecom-regression` | 电商示例单独跑，校验 Hit@1/@3 与通过率 |
+| `test` | 21 条平台自测 + 两个离线 suite 跑批 + **口径门禁**（通过率区间与 badcase 集合必须与预期一致，防判定漂移） |
+| `llm-judge` | 有 `DEEPSEEK_API_KEY` 时跑 `--judge`，一致率低于 60% 直接失败 |
+| `ecom-regression` | 电商示例单独跑，校验 Hit@1/@3 |
+
+需要外部服务的 suite（gis / ecom_agent / babyagi）在 CI 里按 `missing_env` 自动跳过，
+在各自项目仓里由它们自己的 CI 提供 env 后执行——**同一套用例，两处复用**。
 
 ## 许可
 

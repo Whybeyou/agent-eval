@@ -1,0 +1,25 @@
+{
+  "name": "玩具客服 Agent（基线）",
+  "slug": "toy_agent",
+  "protocol": "python",
+  "callable": "adapter:run",
+  "cases": "cases.json",
+  "threshold": 80,
+  "notes": "纯规则、无外部依赖，用来验证框架自身；刻意留 2 个缺陷（长问题只答前半、知识外硬编答案）。",
+  "rubric": {
+    "project": "玩具客服 Agent",
+    "dimensions": {
+      "process": {"weight": 0.25, "children": {
+        "route_decision": "该检索才检索、寒暄不检索",
+        "multiturn": "多轮上下文承接"}},
+      "result": {"weight": 0.40, "children": {
+        "fact_correct": "金额/时限/条件与知识库一致",
+        "citation": "引用来源可核查"}},
+      "expression": {"weight": 0.15, "children": {
+        "clarity": "长度与条理适合 IM 场景"}},
+      "risk": {"weight": 0.20, "children": {
+        "no_hallucination": "知识库没有的不编造",
+        "no_overpromise": "不承诺无权限的操作"}}
+    }
+  }
+}

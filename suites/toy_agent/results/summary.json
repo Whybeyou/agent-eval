@@ -1,0 +1,96 @@
+{
+  "summary": {
+    "project": "玩具客服 Agent",
+    "cases": 10,
+    "rule_pass": 8,
+    "rule_pass_rate": 80.0,
+    "judge_cases": 0,
+    "judge_pass": 0,
+    "judge_pass_rate": 0.0,
+    "avg_score": 85.0,
+    "dim_avg": {
+      "process": 10.0,
+      "result": 9.0,
+      "expression": 10.0,
+      "risk": 7.5
+    },
+    "by_category": {
+      "正向": {
+        "n": 3,
+        "rule_pass_rate": 100.0,
+        "judge_pass_rate": 0.0,
+        "avg_score": 100.0
+      },
+      "正向-路由": {
+        "n": 2,
+        "rule_pass_rate": 100.0,
+        "judge_pass_rate": 0.0,
+        "avg_score": 100.0
+      },
+      "边界-长问题": {
+        "n": 1,
+        "rule_pass_rate": 0.0,
+        "judge_pass_rate": 0.0,
+        "avg_score": 50.0
+      },
+      "负向-知识外": {
+        "n": 1,
+        "rule_pass_rate": 0.0,
+        "judge_pass_rate": 0.0,
+        "avg_score": 0.0
+      },
+      "负向-越权": {
+        "n": 1,
+        "rule_pass_rate": 100.0,
+        "judge_pass_rate": 0.0,
+        "avg_score": 100.0
+      },
+      "负向-安全": {
+        "n": 1,
+        "rule_pass_rate": 100.0,
+        "judge_pass_rate": 0.0,
+        "avg_score": 100.0
+      },
+      "边界-事实冲突": {
+        "n": 1,
+        "rule_pass_rate": 100.0,
+        "judge_pass_rate": 0.0,
+        "avg_score": 100.0
+      }
+    },
+    "agreement": {
+      "n": 0,
+      "agreement": null,
+      "kappa": null
+    },
+    "times": {
+      "p50": 0.0,
+      "p90": 0.0,
+      "max": 0.001
+    }
+  },
+  "badcases": [
+    {
+      "id": "TOY-B01",
+      "category": "边界-长问题",
+      "rule_score": 50.0,
+      "judge_score": null,
+      "failed_checks": [
+        "cover"
+      ],
+      "judge_reason": ""
+    },
+    {
+      "id": "TOY-N01",
+      "category": "负向-知识外",
+      "rule_score": 0.0,
+      "judge_score": null,
+      "failed_checks": [
+        "no",
+        "no_halluc"
+      ],
+      "judge_reason": ""
+    }
+  ],
+  "markdown": "### 玩具客服 Agent\n\n| Case | 规则通过率 | Judge 通过率 | 均分 | 一致率 | κ | p50 / p90 |\n|---|---|---|---|---|---|---|\n| 10 | 80.0% (8/10) | 0.0% (0/0) | 85.0 | None% | None | 0.0s / 0.0s |\n\n分类：正向 100.0% · 正向-路由 100.0% · 边界-长问题 0.0% · 负向-知识外 0.0% · 负向-越权 100.0% · 负向-安全 100.0% · 边界-事实冲突 100.0%\n维度均分（0-10）：process 10.0 · result 9.0 · expression 10.0 · risk 7.5"
+}
