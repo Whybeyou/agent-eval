@@ -8,7 +8,7 @@
 
 ![ci](https://github.com/Whybeyou/agent-eval/actions/workflows/ci.yml/badge.svg)
 
-## 当前接入的 4 个系统（实测）
+## 当前接入的 6 个系统（实测）
 
 | 被测系统 | 协议 | 用例 | 规则通过率 | Judge 通过率 | 一致率 κ | Hit@1 | SUT p50 |
 |---|---|---|---|---|---|---|---|
@@ -16,9 +16,10 @@
 | 电商客服 Agent（FastAPI 线上服务，混合检索 + Agentic RAG） | **http** | 8 | 100% (8/8) | 100% | 1.0 | 80% | 3.37s |
 | 自主任务驱动 Agent（BabyAGI：执行/规划/排序 + 技能路由 + 记忆） | python | 2 | 100% (2/2) | — | — | — | 34.0s |
 | 电商 RAG（本地 BM25 示例，离线可跑） | python | 16 | 87.5% (14/16) | — | — | 90% | — |
+| **GIS 空间数据中台**（摄取/质量治理/分层落库/指标服务/血缘） | python | 11 | 100% (11/11) | — | — | — | 0.23s |
 | 玩具客服（框架自检基线） | python | 10 | 80% (8/10) | — | — | — | — |
 
-合计 **53 条用例，规则机评 88.7%（47/53）**；有 Judge 的 25 条一致率 88.0%。
+合计 **64 条用例，规则机评 90.6%（58/64）**；有 Judge 的 25 条一致率 88.0%。
 每个系统都**故意留了未修的 badcase**——评测的价值在于把它们钉在名单上（见下方"归因"）。
 
 ## 30 秒上手（不需要 API key）
@@ -32,7 +33,7 @@ python -m evalkit.cli report runs/                  # 出跨系统看板
 
 ```
 ### Agent 评测看板
-接入 **5** 个被测系统，共 **53** 条用例；规则机评合计 **88.7%**（47/53），LLM-Judge 判定 25 条（通过率 88.0%）
+接入 **6** 个被测系统，共 **64** 条用例；规则机评合计 **90.6%**（58/64），LLM-Judge 判定 25 条（通过率 88.0%）
 
 | 被测系统 | 用例 | 规则通过率 | Judge 通过率 | 一致率 κ | 风险失败 | Hit@1 | SUT p50 / p90 |
 |---|---|---|---|---|---|---|---|
@@ -57,7 +58,8 @@ python -m evalkit.cli run suites/ --judge --env-file .env
               │                                                                     │
  suites/gis_agent/adapter.py ──┐                                     ┌── 规则机评（硬事实）
  suites/babyagi/adapter.py  ──┼──► evalkit.runner ──► 记录 JSONL ──┼── LLM-Judge（语义）
- suites/ecom_agent (HTTP)   ──┘        │                            └── 一致率 / κ
+ suites/ecom_agent (HTTP)   ──┤        │                            └── 一致率 / κ
+ suites/gis_datahub（数据管道）──┘        │
                                        │
                                   dashboard ──► 跨系统看板（一张表）
                                        │
@@ -117,6 +119,10 @@ suites/my_agent/
 min_len / tool_called / cite_from / json_field`；领域断言用 `@register("rows_eq")` 扩展
 （GIS suite 就是这么接进来的：行数、CRS、面积、字段、AST 越权——全部读产物本身，不看模型自述）。
 
+数据类断言（给数据管道用）在 `evalkit/checks_data.py`：`reject_breakdown / metric_close / metric_keys /
+idempotent / http_status / api_shape / lineage_has / no_metric`——判的是数据事实（行数、拒绝分布、指标值、
+幂等、血缘、接口契约、越权拒绝），这类系统上 LLM-Judge 基本没用武之地。
+
 文本类断言支持 `"body_only": true`：先剔除「（来源：…）」再匹配，否则文档名会让断言假通过。
 
 ## 指标口径
@@ -147,6 +153,7 @@ min_len / tool_called / cite_from / json_field`；领域断言用 `@register("ro
 - **数据集**：GIS-B03 在 CI 上必挂——case 用 `no_crs.shp`，但 fixtures 脚本只生成 `no_crs.geojson`。本地能过是因为有人手工放过一个 shp。→ 让脚本自己产出"删掉 .prj 的 Shapefile"。
 - **评测标准**：ECA-P01 第一次判错，答案是「由**买家（您）承担**」，断言写的是 `contains_all(["买家承担"])` → 括号打断了字面匹配。→ 改成语义组合 `["买家","承担"]`。
 - **Agent 链路**：BabyAGI 写 `sub/sum.txt` 直接 `FileNotFoundError`——`write_file` 工具没建父目录。→ 修工具，并把这条 case 留作回归。
+- **数据管道（新接入的中台）**：空 CSV 触发 pandas `EmptyDataError` 直接崩（应在质量层判 fail）；`api.py` 用了 `str | None` 在 Python 3.9 抛 `TypeError`；`Polygon()` 的 `is_valid=True` 让空几何漏过校验；拒绝原因没进产物，人看日志看不到。→ 四个都修了，并各自留了回归。
 - **链路（跨系统）**：框架自身也曾把用例跑错对象——两个 suite 都有 `adapter.py`，`import_module` 命中 `sys.modules` 缓存，用 A 的适配器跑了 B 的用例。→ 改为按文件路径加载 + 唯一模块名，并加了 `test_two_suites_with_same_module_name_are_isolated` 回归测试。
 
 ## 其它踩过的坑
@@ -168,6 +175,7 @@ evalkit/
 ├── runner.py     # suite 加载、单条执行、断言→打分→落盘、Hit@k
 ├── cli.py        # list / run / report（--judge / --only / --env-file / --strict）
 ├── checks.py     # 断言注册表
+├── checks_data.py # 数据类断言（拒绝分布/指标/幂等/血缘/接口契约）
 ├── scoring.py    # 维度加权 + 风险否决 + 阈值
 ├── judge.py      # LLM-Judge（强制 JSON、与被测模型错开）
 ├── metrics.py    # pct / percentile / kappa / agreement
@@ -179,9 +187,10 @@ suites/
 ├── gis_agent/    # 17 条 + fixtures 生成器 + 30 余个领域断言（python 协议）
 ├── ecom_agent/   # 8 条，打真实 FastAPI 服务（http 协议）
 ├── babyagi/      # 2 条，解析 stdout 与产物（python 协议）
+├── gis_datahub/  # 11 条，数据管道（每条用独立临时库，避免状态污染）
 ├── ecom_rag/     # 16 条，纯标准库 BM25 离线示例
 └── toy_agent/    # 10 条，框架自检基线
-tests/            # 21 条平台自测（断言/打分/κ/协议隔离/看板/落盘）
+tests/            # 26 条平台自测（断言/数据断言/打分/κ/协议隔离/看板/落盘）
 ```
 
 ## CI
@@ -190,12 +199,13 @@ tests/            # 21 条平台自测（断言/打分/κ/协议隔离/看板/�
 
 | job | 内容 |
 |---|---|
-| `test` | 21 条平台自测 + 两个离线 suite 跑批 + **口径门禁**（通过率区间与 badcase 集合必须与预期一致，防判定漂移） |
+| `test` | 26 条平台自测 + 两个离线 suite 跑批 + **口径门禁**（通过率区间与 badcase 集合必须与预期一致，防判定漂移） |
 | `llm-judge` | 有 `DEEPSEEK_API_KEY` 时跑 `--judge`，一致率低于 60% 直接失败 |
 | `ecom-regression` | 电商示例单独跑，校验 Hit@1/@3 |
 
-需要外部服务的 suite（gis / ecom_agent / babyagi）在 CI 里按 `missing_env` 自动跳过，
-在各自项目仓里由它们自己的 CI 提供 env 后执行——**同一套用例，两处复用**。
+需要外部依赖的 suite（`gis_agent` 需要 geopandas、`ecom_agent` 需要 8010 服务、`babyagi` 需要项目目录、
+`gis_datahub` 需要项目目录 + pandas/geopandas）在本仓 CI 里按 `missing_env` 自动跳过，由各自项目仓的 CI
+装好依赖后执行——**同一套用例，两处复用**。
 
 ## 许可
 
