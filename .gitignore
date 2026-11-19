@@ -8,3 +8,7 @@ runs/
 reports/
 suites/*/work/
 suites/*/fixtures/
+
+# GitHub Pages 演示（docs/ 是生成物，允许入库）
+!docs/
+!docs/*.html
